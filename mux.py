@@ -8,9 +8,7 @@ dari koneksi masuk untuk menentukan protokolnya:
   - Byte pertama 0x16 (TLS handshake record)      -> diteruskan ke Stunnel (SSL)
   - Selain itu (dianggap teks/HTTP-WS handshake)  -> diteruskan ke ws-proxy (WS)
 
-Berguna untuk platform seperti Railway yang cuma menyediakan SATU
-TCP Proxy publik per service, sehingga SSH-SSL dan SSH-WS tetap bisa
-diakses lewat port publik yang sama.
+Dituning khusus agar KEBAL terhadap payload manipulasi jumbo (Anti 'too long line').
 """
 
 import asyncio
@@ -99,9 +97,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 
 async def main():
-    server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
+    # 🔥 TUNING UTAMA: Menambahkan 'limit=8192' agar gerbang pertama tidak memicu 'too long line'
+    server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT, limit=8192)
     log.info(
-        "Mux jalan di %s:%s -> SSL:%s:%s | WS:%s:%s",
+        "Mux jalan di %s:%s -> SSL:%s:%s | WS:%s:%s (Jumbo Payload Active)",
         LISTEN_HOST, LISTEN_PORT,
         SSL_TARGET_HOST, SSL_TARGET_PORT,
         WS_TARGET_HOST, WS_TARGET_PORT,
