@@ -5,6 +5,7 @@ WebSocket <-> SSH proxy (Dropbear Premium Matcher Version).
 Menerima koneksi HTTP/WebSocket di suatu port. Script ini dimodifikasi khusus
 agar sinkron dengan mekanisme jabat tangan Dropbear SSH yang menggunakan 
 custom banner, serta menyaring sisa payload enhanced PATCH dengan aman.
+Dituning khusus agar KEBAL terhadap payload super panjang (Anti 'too long line').
 """
 
 import asyncio
@@ -121,7 +122,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         # Jika paket pertama bocor membawa sampah HTTP mentah dari HTTP Custom
                         if b"PATCH" in data or b"HTTP/" in data:
                             # Bersihkan data kotor, cari apakah ada sisa data murni di belakangnya
-                            # Dropbear lebih kebal, jadi jika paket awal murni teks kotor, kita bypass demi stabilitas
                             if b"SSH" in data:
                                 idx = data.find(b"SSH-")
                                 data = data[idx:]
@@ -175,9 +175,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 
 async def main():
-    server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT)
+    # 🔥 PENTING: Menambahkan 'limit=8192' agar buffer pembacaan baris HTTP kebal terhadap payload jumbo
+    server = await asyncio.start_server(handle_client, LISTEN_HOST, LISTEN_PORT, limit=8192)
     log.info(
-        "WS proxy jalan di %s:%s -> Dropbear Backend Active",
+        "WS proxy jalan di %s:%s -> Dropbear Backend Active (Jumbo Payload Supported)",
         LISTEN_HOST, LISTEN_PORT,
     )
     async with server:
