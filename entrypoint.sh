@@ -71,10 +71,10 @@ echo "[*] Memulai WebSocket Proxy (internal, port $WS_INTERNAL_PORT, forward ke 
 WS_PORT="$WS_INTERNAL_PORT" WS_TARGET_HOST="127.0.0.1" WS_TARGET_PORT="22" \
     python3 /usr/local/bin/ws-proxy.py &
 
-# --- Argo Tunnel (cloudflared) Jalur HTTP Muxer (SOLUSI MUTLAK) ---
+# --- Argo Tunnel (cloudflared) Jalur Standar Langsung Ke Muxer ---
 if [ -n "$CF_TUNNEL_TOKEN" ]; then
-    echo "[*] Menjalankan Cloudflare Tunnel via Jalur HTTP Muxer..."
-    # Ditembak sebagai HTTP ke port publik muxer 8080 agar lolos sensor Cloudflare Access
+    echo "[*] Menjalankan Cloudflare Tunnel via Jalur Utama Muxer..."
+    # Menembak langsung ke gerbang utama 8080 secara transparan lewat token asli
     cloudflared tunnel run --url "http://127.0.0.1:$PUBLIC_PORT" --token "$CF_TUNNEL_TOKEN" &
 else
     echo "[!] CF_TUNNEL_TOKEN tidak diset -> Cloudflare Tunnel dilewati."
