@@ -12,7 +12,6 @@ SSL_INTERNAL_PORT="${SSL_INTERNAL_PORT:-2443}"
 WS_INTERNAL_PORT="${WS_INTERNAL_PORT:-8880}"
 
 echo "[*] Mengonfigurasi Server Message Dropbear (Banner Pra-Login)..."
-# Dropbear membaca teks murni, kita buat simpel tapi elegan
 cat << 'EOF' > /etc/dropbear_banner
 =================================================
              PREMIUM SSH SERVER DROPBEAR         
@@ -22,7 +21,6 @@ cat << 'EOF' > /etc/dropbear_banner
 EOF
 
 echo "[*] Mengonfigurasi Respon Server (Pasca-Login)..."
-# Skrip ini akan dieksekusi otomatis ketika user berhasil login
 cat << 'EOF' > /etc/profile.d/99-respon-server.sh
 #!/bin/bash
 clear
@@ -46,9 +44,6 @@ fi
 echo "$USER_NAME:$USER_PASS" | chpasswd
 
 echo "[*] Memulai Dropbear Server di Port Lokal 22..."
-# -p 127.0.0.1:22 = Hanya merespon internal (aman lewat proxy)
-# -b /etc/dropbear_banner = Memasang banner pra-login
-# -W 65536 = Trik premium memaksimalkan buffer size agar speed download ngacir
 /usr/sbin/dropbear -p 127.0.0.1:22 -b /etc/dropbear_banner -W 65536
 
 echo "[*] Membuat konfigurasi Stunnel (internal) di Port $SSL_INTERNAL_PORT..."
@@ -66,16 +61,6 @@ EOF
 echo "[*] Menambahkan sesuatu di .bashrc..."
 cat <<'EOF'>> ~/.bashrc
 clear
-R='\e[1;31m'
-G='\e[1;32m'
-C='\e[1;36m'
-N='\e[0m'
-
-alias c='clear'
-alias x='exit'
-alias +x='chmod +x'
-alias cls='clear;ls'
-
 menu
 EOF
 
@@ -83,37 +68,19 @@ echo "[*] Memulai Stunnel (internal, port $SSL_INTERNAL_PORT)..."
 stunnel /etc/stunnel/stunnel.conf &
 
 echo "[*] Memulai WebSocket Proxy (internal, port $WS_INTERNAL_PORT, forward ke SSH 127.0.0.1:22)..."
-# Menggunakan ws-proxy versi Dropbear Premium Matcher yang kebal packet size
 WS_PORT="$WS_INTERNAL_PORT" WS_TARGET_HOST="127.0.0.1" WS_TARGET_PORT="22" \
     python3 /usr/local/bin/ws-proxy.py &
 
-# --- Argo Tunnel (cloudflared) Multi-Jalur Resmi (SSL & WS 2-in-1) ---
+# --- Argo Tunnel (cloudflared) Jalur HTTP Muxer (SOLUSI MUTLAK) ---
 if [ -n "$CF_TUNNEL_TOKEN" ]; then
-    echo "[*] Membuat konfigurasi multi-jalur Cloudflare Tunnel..."
-    
-    # Membuat file konfigurasi ingress kustom agar Cloudflare paham protokol yang lewat
-    cat <<EOF > /tmp/cloudflared_config.yml
-tunnel: local-railway
-ingress:
-  # Jalur WebSocket (WS): Dilempar sebagai HTTP ke proxy penyaring data kotor
-  - hostname: sg1.dfathu.cc.cd
-    service: http://127.0.0.1:$WS_INTERNAL_PORT
-
-  # Jalur Stunnel (SSL): Dilempar sebagai TCP murni agar jabat tangan TLS tidak rusak oleh Cloudflare
-  - hostname: ssl1.dfathu.cc.cd
-    service: tcp://127.0.0.1:$SSL_INTERNAL_PORT
-
-  # Syarat wajib penutup konfigurasi multi-ingress cloudflared
-  - service: http_status:404
-EOF
-
-    echo "[*] Menjalankan Cloudflare Tunnel Dual Mode..."
-    cloudflared tunnel --config /tmp/cloudflared_config.yml run --token "$CF_TUNNEL_TOKEN" &
+    echo "[*] Menjalankan Cloudflare Tunnel via Jalur HTTP Muxer..."
+    # Ditembak sebagai HTTP ke port publik muxer 8080 agar lolos sensor Cloudflare Access
+    cloudflared tunnel run --url "http://127.0.0.1:$PUBLIC_PORT" --token "$CF_TUNNEL_TOKEN" &
 else
     echo "[!] CF_TUNNEL_TOKEN tidak diset -> Cloudflare Tunnel dilewati."
 fi
 
-echo "[*] Memulai Multiplexer di Port PUBLIK $PUBLIC_PORT (auto-deteksi SSL vs WS untuk Railway TCP asli)..."
+echo "[*] Memulai Multiplexer di Port PUBLIK $PUBLIC_PORT..."
 exec env \
     PORT="$PUBLIC_PORT" \
     SSL_TARGET_HOST="127.0.0.1" SSL_TARGET_PORT="$SSL_INTERNAL_PORT" \
