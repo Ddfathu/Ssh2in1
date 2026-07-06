@@ -83,20 +83,37 @@ echo "[*] Memulai Stunnel (internal, port $SSL_INTERNAL_PORT)..."
 stunnel /etc/stunnel/stunnel.conf &
 
 echo "[*] Memulai WebSocket Proxy (internal, port $WS_INTERNAL_PORT, forward ke SSH 127.0.0.1:22)..."
-# Tetap mengarah ke 127.0.0.1:22 yang sekarang sudah diisi oleh Dropbear
+# Menggunakan ws-proxy versi Dropbear Premium Matcher yang kebal packet size
 WS_PORT="$WS_INTERNAL_PORT" WS_TARGET_HOST="127.0.0.1" WS_TARGET_PORT="22" \
     python3 /usr/local/bin/ws-proxy.py &
 
-# --- Argo Tunnel (cloudflared) Jalur Utama Muxer (SSL & WS 2-in-1) ---
-# Mengarahkan cloudflared langsung ke port publik multiplexer (PUBLIC_PORT)
+# --- Argo Tunnel (cloudflared) Multi-Jalur Resmi (SSL & WS 2-in-1) ---
 if [ -n "$CF_TUNNEL_TOKEN" ]; then
-    echo "[*] Menjalankan Cloudflare Tunnel (Argo) langsung ke Gerbang Muxer..."
-    cloudflared tunnel run --url "http://127.0.0.1:$PUBLIC_PORT" --token "$CF_TUNNEL_TOKEN" &
+    echo "[*] Membuat konfigurasi multi-jalur Cloudflare Tunnel..."
+    
+    # Membuat file konfigurasi ingress kustom agar Cloudflare paham protokol yang lewat
+    cat <<EOF > /tmp/cloudflared_config.yml
+tunnel: local-railway
+ingress:
+  # Jalur WebSocket (WS): Dilempar sebagai HTTP ke proxy penyaring data kotor
+  - hostname: sg1.dfathu.cc.cd
+    service: http://127.0.0.1:$WS_INTERNAL_PORT
+
+  # Jalur Stunnel (SSL): Dilempar sebagai TCP murni agar jabat tangan TLS tidak rusak oleh Cloudflare
+  - hostname: ssl1.dfathu.cc.cd
+    service: tcp://127.0.0.1:$SSL_INTERNAL_PORT
+
+  # Syarat wajib penutup konfigurasi multi-ingress cloudflared
+  - service: http_status:404
+EOF
+
+    echo "[*] Menjalankan Cloudflare Tunnel Dual Mode..."
+    cloudflared tunnel --config /tmp/cloudflared_config.yml run --token "$CF_TUNNEL_TOKEN" &
 else
     echo "[!] CF_TUNNEL_TOKEN tidak diset -> Cloudflare Tunnel dilewati."
 fi
 
-echo "[*] Memulai Multiplexer di Port PUBLIK $PUBLIC_PORT (auto-deteksi SSL vs WS)..."
+echo "[*] Memulai Multiplexer di Port PUBLIK $PUBLIC_PORT (auto-deteksi SSL vs WS untuk Railway TCP asli)..."
 exec env \
     PORT="$PUBLIC_PORT" \
     SSL_TARGET_HOST="127.0.0.1" SSL_TARGET_PORT="$SSL_INTERNAL_PORT" \
